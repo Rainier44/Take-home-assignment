@@ -13,43 +13,42 @@ class BrickQueuer:
             wall: The Wall object to generate queues for
         """
         self.wall = wall
-        # State variables for robot optimization
-        self.lastLayedBrickLength = 0
-        self.hDirection = 'right'
-        self.hPos = 0
-        self.vPos = 0
-        self.lastFullCourse = None
-        self.strideWidth = 0
-        self.strideHeight = 0
-        self.coursesPerStride = 0
-        self.courseRanges = []
-        self.laidBricks = {}
-        self.hStrideEnd = 0
-        self.vStrideEnd = 0
-        self.currentStride = 0
-
-    def define_per_course_queue(self) -> list:
+        
+    def define_per_course_queue(self):
         """
         Create a simple per-course brick placement queue.
         
         Returns:
-            list: Queue of brick placement coordinates (course, brick_id)
+            list: Queue of brick placement coordinates (course, brick_id, stride number)
         """
         self.wall.brickQueue = []
         for course in range(self.wall.numCourses):
             for i in range(len(self.wall.bricks[course])):
-                self.wall.brickQueue.append((course, i, self.currentStride))
-        return self.wall.brickQueue
+                self.wall.brickQueue.append((course, i, 0))
 
     def define_robot_optimized_queue(self):
         """
         Define a robot-optimized placement sequence
         Places bricks in strides that the robot can reach.
         
-        Returns:
-            list: Queue of brick placement coordinates
         """
         # Initialize robot parameters and tracking data
+
+        # State variables for robot optimization
+        self.hDirection = 'right'       # Horizontal direction of the robot
+        self.hPos = 0                   # Horizontal position of the robot
+        self.vPos = 0                   # Vertical position of the robot in courses
+        self.lastFullCourse = None      # Last course that was fully laid
+        self.coursesPerStride = 0       # Number of courses per stride
+        self.hStrideEnd = 0             # Horizontal stride end
+        self.vStrideEnd = 0             # Vertical stride end
+        self.currentStride = 0          # Stride number for coloring bricks per stride
+        self.lastLayedBrickLength = 0
+
+
+        self.supportSegments = [[] for _ in range(self.wall.numCourses)]    # Tracking which segments of a course are layed and therefore offer support
+
+
         # Get robot capabilities
         self.wall.brickQueue = []
         self.strideWidth = self.wall.usedRobot.strideWidth
@@ -57,20 +56,13 @@ class BrickQueuer:
         self.coursesPerStride = math.floor(self.strideHeight / self.wall.brickTypes[0].courseHeight)
         
         # Track brick placement status
-        self.courseRanges = [None] * self.wall.numCourses  # Stores min/max placement range for each course
         self.laidBricks = {course: set() for course in range(self.wall.numCourses)}
-        
-        # Current robot position
-        self.hPos = 0
-        self.vPos = 0
-        self.hDirection = 'right'
         
         # Process the wall in strides until complete
         while self.vPos < self.wall.numCourses:
             # Calculate the current stride boundaries
             self.hStrideEnd = min(self.hPos + self.strideWidth, self.wall.wallWidth)
             self.vStrideEnd = min(self.vPos + self.coursesPerStride, self.wall.numCourses)
-            self.lastFullCourse = None
             
             # Process current stride area
             self._process_current_stride()
@@ -90,17 +82,13 @@ class BrickQueuer:
             
             # Process each brick in the course
             for brickId in range(len(self.wall.bricks[course])):
-                # Skip already placed bricks
-                if brickId in self.laidBricks[course]:
-                    currentWidth += self.wall.bricks[course][brickId]['type'].length + self.wall.headJoint
-                    continue
-                
+
                 # Get brick information
                 brick = self.wall.bricks[course][brickId]
                 brickLength = brick['type'].length
                 
                 # Check if brick is within the current stride
-                if not self._check_within_stride(currentWidth, brickLength):
+                if not self._check_within_stride(currentWidth, brickLength, course, brickId):
                     currentWidth += brickLength + self.wall.headJoint
                     continue
                 
@@ -114,24 +102,29 @@ class BrickQueuer:
                     self.lastLayedBrickLength = brickLength
                 
                 currentWidth += brickLength + self.wall.headJoint
-            
-            lastCourse = course
-            
+                        
             # Check if this course is complete
             if len(self.laidBricks[course]) == len(self.wall.bricks[course]):
                 self.lastFullCourse = course
 
-    def _check_within_stride(self, currentWidth, brickLength):
+    def _check_within_stride(self, currentWidth, brickLength, course, brickId):
         """
         Check if a brick is within the current horizontal stride.
         
         Args:
             currentWidth: Current width position in the course
             brickLength: Length of the brick
+            course: Current course number
+            brickId: Brick ID in the course
             
         Returns:
             bool: True if brick is within stride, False otherwise
         """
+
+        # Skip bricks that are already laid
+        if brickId in self.laidBricks[course]:
+            return False
+        
         # Skip bricks that are completely before the horizontal position
         if currentWidth + brickLength <= self.hPos:
             return False
@@ -139,7 +132,7 @@ class BrickQueuer:
         # Skip bricks that start after the stride end
         if currentWidth >= self.hStrideEnd:
             return False
-        
+             
         return True
 
     def _check_brick_support(self, course, brickStart, brickEnd):
@@ -154,14 +147,16 @@ class BrickQueuer:
         Returns:
             bool: True if brick has proper support, False otherwise
         """
+        # If this is the first course, the brick is supported
         if course == 0:
-            return True  # First course always has support
+            return True
+
+        # Check if the brick is fully supported by segments in the course below
+        for segment_start, segment_end in self.supportSegments[course - 1]:
+            if segment_start <= brickStart and segment_end >= brickEnd:
+                return True
             
-        if self.courseRanges[course-1] is None:
-            return False
-                
-        supportMin, supportMax = self.courseRanges[course-1]
-        return not (brickStart < supportMin or brickEnd > supportMax)
+        return False
 
     def _brick_in_queue(self, course, brickId, brickStart, brickEnd):
         """
@@ -177,36 +172,88 @@ class BrickQueuer:
         self.wall.brickQueue.append((course, brickId, self.currentStride))
         self.laidBricks[course].add(brickId)
         
-        # Update the course range
-        if self.courseRanges[course] is None:
-            self.courseRanges[course] = [brickStart, brickEnd]
-        else:
-            self.courseRanges[course][0] = min(self.courseRanges[course][0], brickStart)
-            self.courseRanges[course][1] = max(self.courseRanges[course][1], brickEnd)
+        # Calculate the end of the support segment
+        support_end = min(brickEnd + self.wall.headJoint, self.wall.wallWidth)
+        
+        # Add new support segment
+        self._add_support_segment(course, brickStart, support_end)
+
+    def _add_support_segment(self, course, start, end):
+        """
+        Add a new support segment and merge overlapping segments.
+        Handles all cases of overlapping and adjacent segments.
+        
+        Args:
+            course: Course number
+            start: Start position of new segment
+            end: End position of new segment
+        """
+        # If no existing segments, add the new one
+        if not self.supportSegments[course]:
+            self.supportSegments[course] = [(start, end)]
+            return
+
+        # Find all segments that overlap with or are next to the new segment
+        overlapping_indices = []
+        min_start = start
+        max_end = end
+        
+        for i, (seg_start, seg_end) in enumerate(self.supportSegments[course]):
+            # Check for overlap or being next to the new segment
+            if min(end, seg_end) >= max(start, seg_start):
+                overlapping_indices.append(i)
+                min_start = min(min_start, seg_start)
+                max_end = max(max_end, seg_end)
+
+        # If no overlaps found, insert the new segment in the correct position
+        if not overlapping_indices:
+            # Find insertion point to maintain order
+            insert_pos = 0
+            for i, (seg_start, _) in enumerate(self.supportSegments[course]):
+                if start > seg_start:
+                    insert_pos = i + 1
+            
+            self.supportSegments[course].insert(insert_pos, (start, end))
+            return
+
+        # Create new segment list with merged segment
+        new_segments = []
+        for i, segment in enumerate(self.supportSegments[course]):
+            if i < min(overlapping_indices):
+                # Add segments before the merged one
+                new_segments.append(segment)
+            elif i == min(overlapping_indices):
+                # Add the merged segment
+                new_segments.append((min_start, max_end))
+            elif i > max(overlapping_indices):
+                # Add segments after the merged one
+                new_segments.append(segment)
+        
+        self.supportSegments[course] = new_segments
 
     def _move_to_next_stride(self):
         """
         Calculate the next position for the robot.
         """
-
+        # Increment stride counter
         self.currentStride += 1
 
-        # Determine next position based on direction
+        # Determine next position based on direction and proximity to edges
         if self.hDirection == 'right':
             if self.hStrideEnd >= self.wall.wallWidth:
                 # Reached the right edge, move up to the next complete course
-                self.vPos = self.lastFullCourse + 1 if self.lastFullCourse is not None else self.vPos + self.coursesPerStride
+                self.vPos = self.lastFullCourse + 1 
                 self.hDirection = 'left'
             else:
-                self.hPos += self.lastLayedBrickLength + self.wall.headJoint
+                # Continue right
+                self.hPos += (self.lastLayedBrickLength + self.wall.headJoint)
                 self.hPos = min(self.hPos, self.wall.wallWidth - self.strideWidth)
         else:  # hDirection == 'left'
             if self.hPos <= 0:
                 # Reached the left edge, move up
-                self.vPos = self.lastFullCourse + 1 if self.lastFullCourse is not None else self.vPos + self.coursesPerStride
+                self.vPos = self.lastFullCourse + 1 
                 self.hDirection = 'right'
                 self.hPos = max(0, self.hPos)
-                
             else:
                 # Continue left
-                self.hPos -= self.lastLayedBrickLength + self.wall.headJoint
+                self.hPos -= (self.lastLayedBrickLength + self.wall.headJoint)

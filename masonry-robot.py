@@ -10,9 +10,8 @@ import argparse
 
 
 class Brick:
-    def __init__(self, id: int, name: str, length: float, height: float, courseHeight: float, width: float):
+    def __init__(self, length: float, height: float, courseHeight: float, width: float):
         # Initialize the brick type
-        self.name = name
         self.length = length
         self.height = height
         self.courseHeight = courseHeight
@@ -37,8 +36,6 @@ class Wall:
         
         self.usedRobot = usedRobot
 
-        self.queuer = BrickQueuer(self)
-
     def _getStretcherBondPattern(self, brickTypes: list, course: int, yPos: float):
         # Define the stretcher bond pattern for the wall
         fullBrick = self.brickTypes[0]
@@ -53,7 +50,7 @@ class Wall:
         self.bricks[course].append({'type': startBrickType, 'ID': 0, 'position': (xPos, yPos)})
         xPos += startBrickType.length + self.headJoint
 
-        id = 1
+        brickId = 1
         while xPos < self.wallWidth:
 
             remainingWidth = self.wallWidth - xPos
@@ -63,10 +60,55 @@ class Wall:
             else:
                 brickType = halfBrick
 
-            self.bricks[course].append({'type': brickType, 'ID': id, 'position': (xPos, yPos)})
+            self.bricks[course].append({'type': brickType, 'ID': brickId, 'position': (xPos, yPos)})
 
             xPos += brickType.length + self.headJoint
-            id += 1
+            brickId += 1
+
+    def _getFlemishBondPattern(self, brickTypes: list, course: int, yPos: float):
+        fullBrick = self.brickTypes[0]  
+        halfBrick = self.brickTypes[1]
+        headerBrick = self.brickTypes[2] 
+        halfHeaderBrick = self.brickTypes[3]
+ 
+        xPos = 0
+        brickId = 1
+
+        if course % 2 == 0:
+            startBrickType = halfBrick
+        else:
+            startBrickType = halfHeaderBrick
+        self.bricks[course].append({'type': startBrickType, 'ID': 0, 'position': (xPos, yPos)})
+        xPos += startBrickType.length + self.headJoint
+
+        while xPos < self.wallWidth:
+            if brickId % 2 == course % 2:
+                isHeader = False
+            else:
+                isHeader = True
+
+            remainingWidth = self.wallWidth - xPos
+
+            currentBrick = headerBrick if isHeader else fullBrick
+
+            if remainingWidth < currentBrick.length:
+                if remainingWidth >= halfHeaderBrick.length:
+                    currentBrick = halfHeaderBrick
+                elif remainingWidth >= halfBrick.length:
+                    currentBrick = halfBrick
+                else:
+                    break
+
+
+            
+            # Add the brick to the wall
+            self.bricks[course].append({'type': currentBrick, 'ID': brickId, 'position': (xPos, yPos)})
+            
+            # Move to the next position
+            xPos += currentBrick.length + self.headJoint
+            brickId += 1
+
+        
 
     def defineBrickGrid2D(self, brickTypes: list[Brick]):
         self.brickTypes = brickTypes
@@ -77,18 +119,25 @@ class Wall:
 
         self.bricks = np.empty((self.numCourses, 0)).tolist()
 
+        self.queuer = BrickQueuer(self)
+        
+
 
         for course in range(self.numCourses):
             yPos = course * self.brickTypes[0].courseHeight
 
             if self.bondType == 'stretcher':
                 self._getStretcherBondPattern(self.brickTypes, course, yPos)
+            elif self.bondType == 'flemish':
+                self._getFlemishBondPattern(self.brickTypes, course, yPos)
+            else:
+                raise ValueError('Invalid bond pattern type')
 
 
     def definePlacementSequence(self):
         # Define the placement sequence of the bricks
         self.brickQueue = []
-        if self.bondType == 'stretcher':
+        if self.bondType in ['stretcher','flemish']:
 
             if self.usedRobot.placementSequence == 'perCourse':
                 self.queuer.define_per_course_queue()
@@ -159,8 +208,10 @@ def main():
     fullBrickLength = 210 # mm
     halfBrickLength = 100 # mm
 
-    brick1 = Brick(1, 'Full', fullBrickLength, brickHeight, courseHeight, brickWidth)
-    brick2 = Brick(2, 'Half', halfBrickLength, brickHeight, courseHeight, brickWidth)
+    fullBrick = Brick(fullBrickLength, brickHeight, courseHeight, brickWidth)
+    halfBrick = Brick(halfBrickLength, brickHeight, courseHeight, brickWidth)
+    headerBrick = Brick(brickWidth, brickHeight, courseHeight, brickWidth)
+    halfHeaderBrick = Brick(brickWidth/2, brickHeight, courseHeight, brickWidth)
 
     wallHeight = 2000 # mm
     wallWidth = 2300 # mm
@@ -174,10 +225,12 @@ def main():
 
     robot1 = Robot(strideWidth, strideHeight, placementSequence)
 
+    bondType = 'flemish'
+    # bondType = 'stretcher'
 
-    wall1 = Wall('stretcher', wallHeight, wallWidth, headJoint, bedJoint, robot1)
+    wall1 = Wall(bondType, wallHeight, wallWidth, headJoint, bedJoint, robot1)
 
-    wall1.defineBrickGrid2D([brick1, brick2])
+    wall1.defineBrickGrid2D([fullBrick, halfBrick, headerBrick, halfHeaderBrick])
     wall1.definePlacementSequence()
     plotBrickGrid2D(wall1)
                 
