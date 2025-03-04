@@ -225,8 +225,23 @@ def main():
 
     robot1 = Robot(strideWidth, strideHeight, placementSequence)
 
-    bondType = 'flemish'
-    # bondType = 'stretcher'
+    while True:
+            bond_choice = input("Choose bond type (1 for stretcher, 2 for flemish) [default: 1]: ").strip()
+            
+            # Default to stretcher if empty input
+            if bond_choice == "":
+                bondType = 'stretcher'
+                break
+                
+            # Process valid choices
+            if bond_choice == "1":
+                bondType = 'stretcher'
+                break
+            elif bond_choice == "2":
+                bondType = 'flemish'
+                break
+            else:
+                print("Invalid choice. Please enter 1 for stretcher or 2 for flemish.")
 
     wall1 = Wall(bondType, wallHeight, wallWidth, headJoint, bedJoint, robot1)
 
