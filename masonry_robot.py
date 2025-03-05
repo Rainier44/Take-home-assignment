@@ -1,12 +1,9 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import numpy as np
-import math
 
 from queueing_functions import BrickQueuer
 from colors import colors
 
-import argparse
 
 
 class Brick:
@@ -26,17 +23,16 @@ class Robot:
         self.placementSequence = placementSequence
     
 class Wall:
-    def __init__(self,bondType: str, wallHeight: float, wallWidth: float, headJoint: float, bedJoint: float, usedRobot: Robot):
+    def __init__(self,bondType: str, wallHeight: float, wallWidth: float, headJoint: float, usedRobot: Robot):
         #Initialize the wall
         self.bondType = bondType
         self.wallHeight = wallHeight
         self.wallWidth = wallWidth
         self.headJoint = headJoint
-        self.bedJoint = bedJoint
         
         self.usedRobot = usedRobot
 
-    def _getStretcherBondPattern(self, brickTypes: list, course: int, yPos: float):
+    def _getStretcherBondPattern(self, course: int, yPos: float):
         # Define the stretcher bond pattern for the wall
         fullBrick = self.brickTypes[0]
         halfBrick = self.brickTypes[1]
@@ -65,7 +61,7 @@ class Wall:
             xPos += brickType.length + self.headJoint
             brickId += 1
 
-    def _getFlemishBondPattern(self, brickTypes: list, course: int, yPos: float):
+    def _getFlemishBondPattern(self, course: int, yPos: float):
         fullBrick = self.brickTypes[0]  
         halfBrick = self.brickTypes[1]
         headerBrick = self.brickTypes[2] 
@@ -99,8 +95,6 @@ class Wall:
                 else:
                     break
 
-
-            
             # Add the brick to the wall
             self.bricks[course].append({'type': currentBrick, 'ID': brickId, 'position': (xPos, yPos)})
             
@@ -113,23 +107,22 @@ class Wall:
     def defineBrickGrid2D(self, brickTypes: list[Brick]):
         self.brickTypes = brickTypes
 
-        assert self.brickTypes[0].height == self.brickTypes[1].height, "Brick heights must be equal"
+        for i in range(1,len(self.brickTypes)):
+            assert self.brickTypes[i-1].height == self.brickTypes[i].height, "Brick heights must be equal"
 
         self.numCourses = int(self.wallHeight / self.brickTypes[0].courseHeight)
 
-        self.bricks = np.empty((self.numCourses, 0)).tolist()
+        self.bricks = [[] for _ in range(self.numCourses)]
 
         self.queuer = BrickQueuer(self)
-        
-
 
         for course in range(self.numCourses):
             yPos = course * self.brickTypes[0].courseHeight
 
             if self.bondType == 'stretcher':
-                self._getStretcherBondPattern(self.brickTypes, course, yPos)
+                self._getStretcherBondPattern(course, yPos)
             elif self.bondType == 'flemish':
-                self._getFlemishBondPattern(self.brickTypes, course, yPos)
+                self._getFlemishBondPattern(course, yPos)
             else:
                 raise ValueError('Invalid bond pattern type')
 
@@ -171,7 +164,7 @@ def plotBrickGrid2D(wall: Wall):
     plt.grid(True)
     plt.xlabel('X Position')
     plt.ylabel('Y Position')
-    plt.title('Brick Layout, Press Enter To add Brick')
+    plt.title(f'Wall with {wall.bondType} bond, Press Enter To add Brick')
     fig.canvas.draw()
     plt.show(block=True)
 
@@ -243,7 +236,7 @@ def main():
             else:
                 print("Invalid choice. Please enter 1 for stretcher or 2 for flemish.")
 
-    wall1 = Wall(bondType, wallHeight, wallWidth, headJoint, bedJoint, robot1)
+    wall1 = Wall(bondType, wallHeight, wallWidth, headJoint, robot1)
 
     wall1.defineBrickGrid2D([fullBrick, halfBrick, headerBrick, halfHeaderBrick])
     wall1.definePlacementSequence()

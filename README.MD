@@ -41,17 +41,17 @@ This project simulates a masonry robot that places bricks to build walls using d
 To run the masonry robot simulation:
 
 ```
-python masonry-robot.py
+python masonry_robot.py
 ```
 
 When the application starts:
 1. You'll be prompted to choose a bond type (1 for stretcher, 2 for flemish)
 2. The visualization window will open showing the brick layout
-3. Press Enter key to add bricks according to the placement sequence, hold Enter to quickly lay the bricks
+3. Press Enter key to add bricks according to the placement sequence, hold Enter to quickly lay the bricks (make sure to click the visual befor pressing enter)
 
 ## Project Structure
 
-- `masonry-robot.py`: Main application file that handles the robot simulation and visualization
+- `masonry_robot.py`: Main application file that handles the robot simulation and visualization
 - `queueing_functions.py`: Contains functions for determining the brick placement sequence
 - `colors.py`: Defines color schemes used in the visualization
 - `requirements.txt`: Lists all Python dependencies
